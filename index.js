@@ -8,6 +8,7 @@ var path = require('path')
 var noop = function () {}
 var call = function (cb) { cb() }
 
+/*
 var IS_OSX = os.platform() === 'darwin'
 var OSX_FOLDER_ICON = '/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/GenericFolderIcon.icns'
 var HAS_FOLDER_ICON = IS_OSX && fs.existsSync(OSX_FOLDER_ICON)
@@ -19,16 +20,17 @@ var FuseBuffer = function () {
 
 FuseBuffer.prototype = Buffer.prototype
 
-fuse.setBuffer(FuseBuffer)
+fuse.setBuffer(FuseBuffer)*/
 fuse.setCallback(function (index, callback) {
   return callback.bind(null, index)
 })
-
+/*
 exports.context = function () {
   var ctx = {}
   fuse.populateContext(ctx)
   return ctx
 }
+*/
 
 exports.mount = function (mnt, ops, opts, cb) {
   if (typeof opts === 'function') return exports.mount(mnt, ops, null, opts)
@@ -70,6 +72,7 @@ exports.mount = function (mnt, ops, opts, cb) {
   }
 
   var mount = function () {
+    console.log('mount')
     // TODO: I got a feeling this can be done better
     if (os.platform() !== 'win32') {
       fs.stat(mnt, function (err, stat) {
@@ -81,7 +84,9 @@ exports.mount = function (mnt, ops, opts, cb) {
         })
       })
     } else {
+      console.log('mount unix')
       fuse.mount(mnt, ops)
+      console.log('mount unix end')
     }
   }
 
@@ -89,6 +94,7 @@ exports.mount = function (mnt, ops, opts, cb) {
   exports.unmount(mnt, mount)
 }
 
+/*
 exports.unmount = function (mnt, cb) {
   fuse.unmount(path.resolve(mnt), cb)
 }
@@ -96,6 +102,7 @@ exports.unmount = function (mnt, cb) {
 exports.errno = function (code) {
   return (code && exports[code.toUpperCase()]) || -1
 }
+*/
 
 exports.EPERM = -1
 exports.ENOENT = -2
@@ -221,3 +228,4 @@ exports.EREMOTEIO = -121
 exports.EDQUOT = -122
 exports.ENOMEDIUM = -123
 exports.EMEDIUMTYPE = -124
+
