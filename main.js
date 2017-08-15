@@ -8,7 +8,7 @@ var FILES = [
 
 var mountPath = process.platform !== 'win32' ? './mnt' : 'M:\\'
 
-fuse.mount(mountPath, {
+fuse.mount('/mnt/flashfs', {
   readdir: function (ino, cb) {
     console.log('readdir(%s)', ino)
     if (ino === 1) return cb(0, FILES )

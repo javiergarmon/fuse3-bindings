@@ -306,8 +306,8 @@ static void uv_handler(uv_async_t *handle){
 
   }else if( operation->type == OP_OPEN ){
 
-    Local<Value> tmp[] = {LOCAL_NUMBER(operation->ino), LOCAL_NUMBER(operation->fi->fh), callback};
-    bindings.open->Call( 3, tmp );
+    Local<Value> tmp[] = {LOCAL_NUMBER(operation->ino), callback};
+    bindings.open->Call( 2, tmp );
 
   }else if( operation->type == OP_READ ){
 
@@ -333,7 +333,7 @@ static void uv_handler(uv_async_t *handle){
 }
 
 static void ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi){
-
+  fprintf(stderr, "%s\n", "getattr");
   struct operation_template operation;
 
   operation.type = OP_GETATTR;
@@ -351,6 +351,7 @@ static void ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi
 }
 
 static void ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name){
+  fprintf(stderr, "%s\n", "lookup");
   struct operation_template operation;
 
   operation.type = OP_LOOKUP;
@@ -369,6 +370,7 @@ static void ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name){
 }
 
 static void ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, struct fuse_file_info *fi){
+  fprintf(stderr, "%s\n", "readdir");
   struct operation_template operation;
 
   operation.type = OP_READDIR;
@@ -409,6 +411,7 @@ static void ll_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi){
 }
 
 static void ll_release(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi){
+  fprintf(stderr, "%s\n", "release");
   struct operation_template operation;
 
   operation.type = OP_RELEASE;
@@ -465,7 +468,7 @@ static void *fuse_thread(void *path){
 
   char *argv[] = {
     (char *) "fuse_bindings_dummy",
-    (char *) "mnt/"
+    (char *) path
   };
 
   struct fuse_args args = FUSE_ARGS_INIT(2, argv);
@@ -532,7 +535,10 @@ NAN_METHOD(Mount) {
   }
 
   //ToDo -> Path
+  Nan::Utf8String path(info[0]);
   Local<Object> operations = info[1].As<Object>();
+  char mountpoint[1024];
+  strcpy(mountpoint, *path);
 
   bindings.open    = LOOKUP_CALLBACK(operations, "open");
   bindings.read    = LOOKUP_CALLBACK(operations, "read");
@@ -544,8 +550,6 @@ NAN_METHOD(Mount) {
   loop = uv_default_loop();
   uv_async_init(loop, &loop_async, uv_handler);
 
-  v8::Local<v8::Value> path = info[0];
-
   pthread_t thread_id;
   pthread_attr_t thread_attr;
 
@@ -553,7 +557,7 @@ NAN_METHOD(Mount) {
   pthread_mutex_init(&mutex_ip, NULL);
   pthread_attr_init(&thread_attr);
   pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_JOINABLE);
-  pthread_create(&thread_id, &thread_attr, &fuse_thread, &path);
+  pthread_create(&thread_id, &thread_attr, &fuse_thread, &mountpoint);
 }
 
 void Init(Handle<Object> exports) {
