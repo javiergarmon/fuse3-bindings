@@ -269,7 +269,7 @@ NAN_METHOD(OpCallback){
     if(result >= 0 ){
       reply_buf_limited(*(operation->req), operation->data, result, operation->offset, operation->size);
     }else{
-      fuse_reply_err(*(operation->req), result);
+      fuse_reply_err(*(operation->req), -1 * result);
     }
 
   }else if( operation->type == OP_RELEASE ){
