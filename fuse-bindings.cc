@@ -119,7 +119,7 @@ static void dirbuf_add( fuse_req_t req, struct dirbuf *b, const char *name, fuse
 
 static int reply_buf_limited(fuse_req_t req, const char *buf, size_t bufsize, off_t off, size_t maxsize){
 
-  fprintf(stderr, "%s => %d - %d - %d\n", "reply_buf_limited", bufsize, off, maxsize);
+  fprintf(stderr, "%s => bufsize %d - offset %d - maxsize %d\n", "reply_buf_limited", bufsize, off, maxsize);
 
   if (off < bufsize){
     return fuse_reply_buf(req, buf + off, min(bufsize - off, maxsize));
@@ -186,9 +186,9 @@ NAN_METHOD(OpCallback){
 
   int result = (info.Length() > 1 && info[1]->IsNumber()) ? info[1]->Int32Value() : 0;
 
-  fprintf(stderr, "%s => %d\n", "op", result );
-
   if( operation->type == OP_GETATTR ){
+
+    fprintf(stderr, "%s => %d\n", "OP_GETATTR", result );
 
     if(result == 0 && info.Length() > 2 && info[2]->IsObject()){
 
@@ -203,6 +203,8 @@ NAN_METHOD(OpCallback){
     }
 
   }else if( operation->type == OP_LOOKUP ){
+
+    fprintf(stderr, "%s => %d\n", "OP_LOOKUP", result );
 
     if(result == 0 && info.Length() > 2 && info[2]->IsObject()){
 
@@ -219,19 +221,23 @@ NAN_METHOD(OpCallback){
       fuse_reply_entry(*(operation->req), &entry);
 
     }else{
-      fuse_reply_err(*(operation->req), result);
+      fuse_reply_err(*(operation->req), ENOENT);
     }
 
   }else if( operation->type == OP_OPEN ){
+
+    fprintf(stderr, "%s => %d\n", "OP_OPEN", result );
 
     if(result == 0 && info.Length() > 2 && info[2]->IsNumber()){
       operation->fi->fh = info[2]->Uint32Value();
       fuse_reply_open(*(operation->req), operation->fi);
     }else{
-      fuse_reply_err(*(operation->req), result);
+      fuse_reply_err(*(operation->req), ENOENT);
     }
 
   }else if( operation->type == OP_READDIR ){
+
+    fprintf(stderr, "%s => %d\n", "OP_READDIR", result );
 
     if(result == 0 && info.Length() > 2 && info[2]->IsArray()){
 
@@ -261,19 +267,22 @@ NAN_METHOD(OpCallback){
       free(buf.p);
 
     }else{
-      fuse_reply_err(*(operation->req), result);
+      fuse_reply_err(*(operation->req), ENOENT);
     }
 
   }else if( operation->type == OP_READ ){
 
+    fprintf(stderr, "%s => %d\n", "OP_READ", result );
+
     if(result >= 0 ){
       reply_buf_limited(*(operation->req), operation->data, result, operation->offset, operation->size);
     }else{
-      fuse_reply_err(*(operation->req), -1 * result);
+      fuse_reply_err(*(operation->req), ENOENT);
     }
 
   }else if( operation->type == OP_RELEASE ){
-    fuse_reply_err(*(operation->req), result);
+    fprintf(stderr, "%s => %d\n", "OP_RELEASE", result );
+    fuse_reply_err(*(operation->req), result == 0 ? 0 : ENOENT);
   }else{
     fprintf(stderr, "OpCallback => %s\n", "not implemented");
   }
