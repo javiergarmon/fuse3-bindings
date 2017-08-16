@@ -198,7 +198,7 @@ NAN_METHOD(OpCallback){
       struct stat stbuf;
       memset( &stbuf, 0, sizeof(stbuf) );
       bindings_set_stat( &stbuf, info[2].As<Object>());
-      fuse_reply_attr(operation->req, &stbuf, 1.0);
+      fuse_reply_attr(operation->req, &stbuf, 10.0);
 
     }else{
       //fprintf(stderr, "%s %d\n", "get attr falla",ENOENT);
@@ -218,8 +218,8 @@ NAN_METHOD(OpCallback){
 
       memset(&entry, 0, sizeof(entry));
       entry.ino = ino;
-      entry.attr_timeout = 1.0;
-      entry.entry_timeout = 1.0;
+      entry.attr_timeout = 10.0;
+      entry.entry_timeout = 10.0;
       bindings_set_stat( &entry.attr, data);
       fuse_reply_entry(operation->req, &entry);
 
@@ -330,6 +330,7 @@ void uv_handler(uv_async_t *handle){
   }else if( operation->type == OP_READ ){
 
     Local<Value> tmp[] = {
+      LOCAL_NUMBER(operation->index), //ToDo -> Remove
       LOCAL_NUMBER(operation->ino),
       LOCAL_NUMBER(operation->fi->fh),
       bindings_buffer( operation->data, operation->size),
@@ -337,7 +338,7 @@ void uv_handler(uv_async_t *handle){
       LOCAL_NUMBER(operation->offset),
       callback
     };
-    bindings.read->Call( 6, tmp );
+    bindings.read->Call( 7, tmp );
 
   }else if( operation->type == OP_RELEASE ){
 
