@@ -40,7 +40,7 @@ enum operations_constants {
   OP_FSYNC,
   OP_FSYNCDIR,
   OP_READDIR,
-  OP_TRUNCATE,
+  OP_TRUNCATE, //10
   OP_FTRUNCATE,
   OP_UTIMENS,
   OP_READLINK,
@@ -50,7 +50,7 @@ enum operations_constants {
   OP_SETXATTR,
   OP_GETXATTR,
   OP_LISTXATTR,
-  OP_REMOVEXATTR,
+  OP_REMOVEXATTR, // 20
   OP_OPEN,
   OP_OPENDIR,
   OP_READ,
@@ -60,7 +60,7 @@ enum operations_constants {
   OP_CREATE,
   OP_UNLINK,
   OP_RENAME,
-  OP_LINK,
+  OP_LINK, // 30
   OP_SYMLINK,
   OP_MKDIR,
   OP_RMDIR,
@@ -80,7 +80,7 @@ struct bindings_template {
 struct operation_template {
   uint32_t index;
   int type;
-  fuse_req_t *req;
+  fuse_req_t req;
   fuse_ino_t ino;
   fuse_file_info *fi;
   size_t size;
@@ -96,7 +96,7 @@ static Nan::Callback *callback_constructor;
 static std::unordered_map<std::uint32_t, operation_template *> operations_map = {};
 static uint32_t operation_count = 0;
 static pthread_mutex_t mutex;
-static pthread_mutex_t mutex_ip;
+static sem_t sem_ip;
 
 struct dirbuf {
   char *p;
@@ -119,7 +119,7 @@ static void dirbuf_add( fuse_req_t req, struct dirbuf *b, const char *name, fuse
 
 static int reply_buf_limited(fuse_req_t req, const char *buf, size_t bufsize, off_t off, size_t maxsize){
 
-  fprintf(stderr, "%s => bufsize %d - offset %d - maxsize %d\n", "reply_buf_limited", bufsize, off, maxsize);
+  //fprintf(stderr, "%s => bufsize %d - offset %d - maxsize %d\n", "reply_buf_limited", (int) bufsize, (int) off, (int) maxsize);
 
   if (off < bufsize){
     return fuse_reply_buf(req, buf + off, min(bufsize - off, maxsize));
@@ -172,7 +172,7 @@ NAN_INLINE v8::Local<v8::Object> bindings_buffer (char *data, size_t length) {
 #else
 void noop (char *data, void *hint) {}
 NAN_INLINE v8::Local<v8::Object> bindings_buffer (char *data, size_t length) {
-  fprintf(stderr, "%s => %d\n", "buffer nuevo", length);
+  //fprintf(stderr, "%s => %d\n", "buffer nuevo", (int) length);
   return Nan::NewBuffer(data, length, noop, NULL).ToLocalChecked();
 }
 #endif
@@ -180,31 +180,34 @@ NAN_INLINE v8::Local<v8::Object> bindings_buffer (char *data, size_t length) {
 NAN_METHOD(OpCallback){
 
   pthread_mutex_lock(&mutex);
+  //fprintf(stderr, "Extraigo %d\n", info[ 0 ]->Uint32Value());
   operation_template *operation = operations_map[ info[ 0 ]->Uint32Value() ];
   operations_map.erase( operation->index );
   pthread_mutex_unlock(&mutex);
+
+  //fprintf(stderr, "REPLY(%d) => dir req( %p )\n", operation->index, operation->req);
 
   int result = (info.Length() > 1 && info[1]->IsNumber()) ? info[1]->Int32Value() : 0;
 
   if( operation->type == OP_GETATTR ){
 
-    fprintf(stderr, "%s => %d\n", "OP_GETATTR", result );
+    //fprintf(stderr, "%s => %d\n", "OP_GETATTR", result );
 
     if(result == 0 && info.Length() > 2 && info[2]->IsObject()){
 
       struct stat stbuf;
       memset( &stbuf, 0, sizeof(stbuf) );
       bindings_set_stat( &stbuf, info[2].As<Object>());
-      fuse_reply_attr(*(operation->req), &stbuf, 1.0);
+      fuse_reply_attr(operation->req, &stbuf, 1.0);
 
     }else{
-      fprintf(stderr, "%s %d\n", "get attr falla",ENOENT);
-      fuse_reply_err(*(operation->req), ENOENT);
+      //fprintf(stderr, "%s %d\n", "get attr falla",ENOENT);
+      fuse_reply_err(operation->req, ENOENT);
     }
 
   }else if( operation->type == OP_LOOKUP ){
 
-    fprintf(stderr, "%s => %d\n", "OP_LOOKUP", result );
+    //fprintf(stderr, "%s => %d\n", "OP_LOOKUP", result );
 
     if(result == 0 && info.Length() > 2 && info[2]->IsObject()){
 
@@ -218,34 +221,34 @@ NAN_METHOD(OpCallback){
       entry.attr_timeout = 1.0;
       entry.entry_timeout = 1.0;
       bindings_set_stat( &entry.attr, data);
-      fuse_reply_entry(*(operation->req), &entry);
+      fuse_reply_entry(operation->req, &entry);
 
     }else{
-      fuse_reply_err(*(operation->req), ENOENT);
+      fuse_reply_err(operation->req, ENOENT);
     }
 
   }else if( operation->type == OP_OPEN ){
 
-    fprintf(stderr, "%s => %d\n", "OP_OPEN", result );
+    //fprintf(stderr, "%s => %d\n", "OP_OPEN", result );
 
     if(result == 0 && info.Length() > 2 && info[2]->IsNumber()){
       operation->fi->fh = info[2]->Uint32Value();
-      fuse_reply_open(*(operation->req), operation->fi);
+      fuse_reply_open(operation->req, operation->fi);
     }else{
-      fuse_reply_err(*(operation->req), ENOENT);
+      fuse_reply_err(operation->req, ENOENT);
     }
 
   }else if( operation->type == OP_READDIR ){
 
-    fprintf(stderr, "%s => %d\n", "OP_READDIR", result );
+    //fprintf(stderr, "%s => %d\n", "OP_READDIR", result );
 
     if(result == 0 && info.Length() > 2 && info[2]->IsArray()){
 
       struct dirbuf buf;
 
       memset(&buf, 0, sizeof(buf));
-      dirbuf_add( *(operation->req), &buf, ".", 1);
-      dirbuf_add( *(operation->req), &buf, "..", 1);
+      dirbuf_add( operation->req, &buf, ".", 1);
+      dirbuf_add( operation->req, &buf, "..", 1);
 
       Local<Array> entries = info[2].As<Array>();
 
@@ -259,41 +262,47 @@ NAN_METHOD(OpCallback){
         entryName = entry->Get(LOCAL_STRING("name"))->ToString();
         entryIno = entry->Get(LOCAL_STRING("ino"))->Uint32Value();
 
-        dirbuf_add( *(operation->req), &buf, ToConstString( String::Utf8Value( entryName ) ), entryIno );
+        dirbuf_add( operation->req, &buf, ToConstString( String::Utf8Value( entryName ) ), entryIno );
 
       }
 
-      reply_buf_limited( *(operation->req), buf.p, buf.size, operation->offset, operation->size );
+      reply_buf_limited( operation->req, buf.p, buf.size, operation->offset, operation->size );
       free(buf.p);
 
     }else{
-      fuse_reply_err(*(operation->req), ENOENT);
+      fuse_reply_err(operation->req, ENOENT);
     }
 
   }else if( operation->type == OP_READ ){
 
-    fprintf(stderr, "%s => %d\n", "OP_READ", result );
+    //fprintf(stderr, "%s => %d\n", "OP_READ", result );
 
     if(result >= 0 ){
-      reply_buf_limited(*(operation->req), operation->data, result, operation->offset, operation->size);
+      fuse_reply_buf( operation->req, operation->data, operation->size );
+      //reply_buf_limited(operation->req, operation->data, result, operation->offset, operation->size);
     }else{
-      fuse_reply_err(*(operation->req), ENOENT);
+      //fprintf(stderr, "%s => %d\n", "Respondiendo con error", ENOENT);
+      fuse_reply_err(operation->req, ENOENT);
     }
 
   }else if( operation->type == OP_RELEASE ){
-    fprintf(stderr, "%s => %d\n", "OP_RELEASE", result );
-    fuse_reply_err(*(operation->req), result == 0 ? 0 : ENOENT);
+    //fprintf(stderr, "%s => %d\n", "OP_RELEASE", result );
+    fuse_reply_err(operation->req, result == 0 ? 0 : ENOENT);
   }else{
-    fprintf(stderr, "OpCallback => %s\n", "not implemented");
+    //fprintf(stderr, "OpCallback => %s - %d - %d\n", "not implemented",operation->type,result);
   }
+
+  //fprintf(stderr, "%s => %p\n", "OpCallback END", operation->req);
+  sem_post(&sem_ip);
 
 }
 
-static void uv_handler(uv_async_t *handle){
+void uv_handler(uv_async_t *handle){
   Nan::HandleScope scope;
 
   operation_template *operation = (operation_template *) handle->data;
-  pthread_mutex_unlock(&mutex_ip);
+  //fprintf(stderr, "%p\n", operation->req);
+  //fprintf(stderr, "UNLOCK SEM\n");
   Local<Value> tmp[] = { Nan::New<Number>(operation->index), Nan::New<FunctionTemplate>(OpCallback)->GetFunction() };
   Nan::Callback *callbackGenerator = new Nan::Callback(callback_constructor->Call(2, tmp).As<Function>());
   Local<Function> callback = callbackGenerator->GetFunction();
@@ -336,130 +345,142 @@ static void uv_handler(uv_async_t *handle){
     bindings.release->Call( 3, tmp );
 
   }else{
-    fprintf(stderr, "uv_handler => %s\n", "not implemented");
+    //fprintf(stderr, "uv_handler => %s %d\n", "not implemented",operation->type);
   }
 
 }
 
-static void ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi){
-  fprintf(stderr, "%s\n", "getattr");
-  struct operation_template operation;
+void ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi){
+  //fprintf(stderr, "%s\n", "getattr");
+  operation_template* operation = new operation_template();
 
-  operation.type = OP_GETATTR;
-  operation.req = &(req);
-  operation.ino = ino;
-  loop_async.data = &(operation);
+  operation->type = OP_GETATTR;
+  operation->req = req;
+  operation->ino = ino;
+  loop_async.data = operation;
 
   pthread_mutex_lock(&mutex);
-  operation.index = operation_count++;
-  operations_map[ operation.index ] = &(operation);
+  operation->index = operation_count++;
+  operations_map[ operation->index ] = operation;
   pthread_mutex_unlock(&mutex);
 
   uv_async_send(&loop_async);
-  pthread_mutex_lock(&mutex_ip);
+  //fprintf(stderr, "LOCK SEM\n");
+  sem_wait(&sem_ip);
 }
 
-static void ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name){
-  fprintf(stderr, "%s\n", "lookup");
-  struct operation_template operation;
+void ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name){
+  //fprintf(stderr, "%s\n", "lookup");
+  operation_template* operation = new operation_template();
 
-  operation.type = OP_LOOKUP;
-  operation.req = &(req);
-  operation.ino = parent;
-  operation.name = name;
-  loop_async.data = &(operation);
+  operation->type = OP_LOOKUP;
+  operation->req = req;
+  operation->ino = parent;
+  operation->name = name;
+  loop_async.data = operation;
 
   pthread_mutex_lock(&mutex);
-  operation.index = operation_count++;
-  operations_map[ operation.index ] = &(operation);
+  operation->index = operation_count++;
+  operations_map[ operation->index ] = operation;
   pthread_mutex_unlock(&mutex);
 
   uv_async_send(&loop_async);
-  pthread_mutex_lock(&mutex_ip);
+  //fprintf(stderr, "LOCK SEM\n");
+  sem_wait(&sem_ip);
 }
 
-static void ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, struct fuse_file_info *fi){
-  fprintf(stderr, "%s\n", "readdir");
-  struct operation_template operation;
+void ll_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, struct fuse_file_info *fi){
+  //fprintf(stderr, "%s\n", "readdir");
+  operation_template* operation = new operation_template();
 
-  operation.type = OP_READDIR;
-  operation.req = &(req);
-  operation.size = size;
-  operation.offset = off;
-  operation.ino = ino;
-  operation.fi = fi;
-  loop_async.data = &(operation);
+  operation->type = OP_READDIR;
+  operation->req = req;
+  operation->size = size;
+  operation->offset = off;
+  operation->ino = ino;
+  operation->fi = fi;
+  loop_async.data = operation;
 
   pthread_mutex_lock(&mutex);
-  operation.index = operation_count++;
-  operations_map[ operation.index ] = &(operation);
+  operation->index = operation_count++;
+  operations_map[ operation->index ] = operation;
   pthread_mutex_unlock(&mutex);
 
   uv_async_send(&loop_async);
-  pthread_mutex_lock(&mutex_ip);
+  //fprintf(stderr, "LOCK SEM\n");
+  sem_wait(&sem_ip);
 }
 
-static void ll_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi){
-  fprintf(stderr, "%s\n", "open");
+void ll_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi){
+  //fprintf(stderr, "%s\n", "open");
+  operation_template* operation = new operation_template();
 
-  struct operation_template operation;
-
-  operation.type = OP_OPEN;
-  operation.req = &(req);
-  operation.ino = ino;
-  operation.fi = fi;
-  loop_async.data = &(operation);
+  operation->type = OP_OPEN;
+  operation->req = req;
+  operation->ino = ino;
+  operation->fi = fi;
+  loop_async.data = operation;
 
   pthread_mutex_lock(&mutex);
-  operation.index = operation_count++;
-  operations_map[ operation.index ] = &(operation);
+  operation->index = operation_count++;
+  operations_map[ operation->index ] = operation;
   pthread_mutex_unlock(&mutex);
 
   uv_async_send(&loop_async);
-  pthread_mutex_lock(&mutex_ip);
+  //fprintf(stderr, "LOCK SEM\n");
+  sem_wait(&sem_ip);
 }
 
-static void ll_release(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi){
-  fprintf(stderr, "%s\n", "release");
-  struct operation_template operation;
+void ll_release(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi){
+  //fprintf(stderr, "%s\n", "release");
+  operation_template* operation = new operation_template();
 
-  operation.type = OP_RELEASE;
-  operation.req = &(req);
-  operation.ino = ino;
-  operation.fi = fi;
-  loop_async.data = &(operation);
+  operation->type = OP_RELEASE;
+  operation->req = req;
+  operation->ino = ino;
+  operation->fi = fi;
+  loop_async.data = operation;
 
   pthread_mutex_lock(&mutex);
-  operation.index = operation_count++;
-  operations_map[ operation.index ] = &(operation);
+  operation->index = operation_count++;
+  operations_map[ operation->index ] = operation;
   pthread_mutex_unlock(&mutex);
 
   uv_async_send(&loop_async);
-  pthread_mutex_lock(&mutex_ip);
+  //fprintf(stderr, "LOCK SEM\n");
+  sem_wait(&sem_ip);
 }
 
-static void ll_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, struct fuse_file_info *fi){
-  fprintf(stderr, "%s\n", "read");
+void ll_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, struct fuse_file_info *fi){
+  //fprintf(stderr, "%s\n", "read");
+  operation_template* operation = new operation_template();
+  //struct operation_template operation;
+  //memset( &operation, 0, sizeof(operation) );
+  char buf[ size ]; // struct fuse_bufvec buf = FUSE_BUFVEC_INIT(size);
 
-  struct operation_template operation;
-  char buf[ size ];
-
-  operation.type = OP_READ;
-  operation.req = &(req);
-  operation.size = size;
-  operation.offset = off;
-  operation.ino = ino;
-  operation.data = buf;
-  operation.fi = fi;
-  loop_async.data = &(operation);
+  operation->type = OP_READ;
+  operation->req = req;
+  operation->size = size;
+  operation->offset = off;
+  operation->ino = ino;
+  operation->data = buf;
+  operation->fi = fi;
+  loop_async.data = operation;
 
   pthread_mutex_lock(&mutex);
-  operation.index = operation_count++;
-  operations_map[ operation.index ] = &(operation);
+  operation->index = operation_count++;
+  operations_map[ operation->index ] = operation;
   pthread_mutex_unlock(&mutex);
 
+  //fprintf(stderr, "read(%d) => dir req( %p )\n", operation->index, req);
+
   uv_async_send(&loop_async);
-  pthread_mutex_lock(&mutex_ip);
+  //fprintf(stderr, "LOCK SEM\n");
+  sem_wait(&sem_ip);
+}
+
+static void ll_init(void *userdata,struct fuse_conn_info *conn){
+  conn->want &= ~FUSE_CAP_ASYNC_READ;
 }
 
 static struct fuse_lowlevel_ops ll_oper = {};
@@ -477,8 +498,10 @@ static void *fuse_thread(void *path){
 
   char *argv[] = {
     (char *) "fuse_bindings_dummy",
-    (char *) path
+    (char *) "/mnt/flashfs" //path
   };
+
+  //fprintf(stderr, "Mounted at %s\n", path);
 
   struct fuse_args args = FUSE_ARGS_INIT(2, argv);
   struct fuse_session *se;
@@ -486,7 +509,7 @@ static void *fuse_thread(void *path){
   /*
   int ret = -1;
 
-  if (*/fuse_parse_cmdline(&args, &opts);/*!= 0)
+  if( */fprintf(stderr, "%d\n", fuse_parse_cmdline(&args, &opts) );/*!= 0)
     return 1;
   if (opts.show_help) {
     printf("usage: %s [options] <mountpoint>\n\n", argv[0]);
@@ -515,10 +538,10 @@ static void *fuse_thread(void *path){
       goto err_out3;
 
   */
-    fprintf(stderr, "%s\n", "bucle");
+    //fprintf(stderr, "%s\n", "bucle");
 
-  int ret = fuse_session_loop(se);
-    fprintf(stderr, "%s\n", "fin bucle");
+  /*int ret = */fuse_session_loop(se);
+    //fprintf(stderr, "%s\n", "fin bucle");
 
 
   fuse_session_unmount(se);
@@ -563,13 +586,14 @@ NAN_METHOD(Mount) {
   pthread_attr_t thread_attr;
 
   pthread_mutex_init(&mutex, NULL);
-  pthread_mutex_init(&mutex_ip, NULL);
+  sem_init(&sem_ip, 0, 0);
   pthread_attr_init(&thread_attr);
   pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_JOINABLE);
   pthread_create(&thread_id, &thread_attr, &fuse_thread, &mountpoint);
 }
 
 void Init(Handle<Object> exports) {
+  ll_oper.init    = ll_init;
   ll_oper.getattr = ll_getattr;
   ll_oper.lookup  = ll_lookup;
   ll_oper.open    = ll_open;
