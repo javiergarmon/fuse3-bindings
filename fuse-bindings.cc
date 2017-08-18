@@ -365,7 +365,13 @@ void ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi){
   operation->type = OP_GETATTR;
   operation->req = req;
   operation->ino = ino;
-  operation->fd = fi->fh;
+
+  if( fi == NULL ){
+    operation->fd = -1;
+  }else{
+    operation->fd = fi->fh;
+  }
+
   loop_async.data = operation;
 
   pthread_mutex_lock(&mutex);
