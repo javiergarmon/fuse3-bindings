@@ -223,6 +223,7 @@ NAN_METHOD(OpCallback){
       entry.entry_timeout = 10.0;
       bindings_set_stat( &entry.attr, data);
       fuse_reply_entry(operation->req, &entry);
+      free( (char*) operation->name );
 
     }else{
       fuse_reply_err(operation->req, ENOENT);
@@ -295,6 +296,7 @@ NAN_METHOD(OpCallback){
   }
 
   fprintf(stderr, "%s => %p\n", "OpCallback END", operation->req);
+  delete operation;
 
 }
 
@@ -311,8 +313,8 @@ void uv_handler(uv_async_t *handle){
 
   if( operation->type == OP_GETATTR ){
 
-    Local<Value> tmp[] = {LOCAL_NUMBER(operation->ino), callback};
-    bindings.getattr->Call( 2, tmp );
+    Local<Value> tmp[] = {LOCAL_NUMBER(operation->ino), LOCAL_NUMBER(operation->fd), callback};
+    bindings.getattr->Call( 3, tmp );
 
   }else if( operation->type == OP_READDIR ){
 
@@ -363,6 +365,7 @@ void ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi){
   operation->type = OP_GETATTR;
   operation->req = req;
   operation->ino = ino;
+  operation->fd = fi->fh;
   loop_async.data = operation;
 
   pthread_mutex_lock(&mutex);
@@ -381,10 +384,13 @@ void ll_lookup(fuse_req_t req, fuse_ino_t parent, const char *name){
   //fprintf(stderr, "%s\n", "lookup");
   operation_template* operation = new operation_template();
 
+  char* name_copy = new char[strlen( name ) ];
+  strcpy(name_copy,name);
+
   operation->type = OP_LOOKUP;
   operation->req = req;
   operation->ino = parent;
-  operation->name = name;
+  operation->name = name_copy;
   loop_async.data = operation;
 
   pthread_mutex_lock(&mutex);
