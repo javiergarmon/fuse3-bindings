@@ -21,8 +21,8 @@ var FuseBuffer = function () {
 FuseBuffer.prototype = Buffer.prototype
 
 fuse.setBuffer(FuseBuffer)*/
-fuse.setCallback(function (index, callback) {
-  return callback.bind(null, index)
+fuse.setCallback(function (callback) {
+  return callback.bind(null)
 })
 /*
 exports.context = function () {

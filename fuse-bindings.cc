@@ -94,6 +94,7 @@ static uv_loop_t *loop;
 static uv_async_t loop_async;
 static struct bindings_template bindings;
 static Nan::Callback *callback_constructor;
+static Nan::Callback *commonCallback;
 static std::unordered_map<std::uint32_t, operation_template *> operations_map = {};
 static uint32_t operation_count = 0;
 static pthread_mutex_t mutex;
@@ -104,11 +105,11 @@ struct dirbuf {
   size_t size;
 };
 
-const char* ToConstString(const String::Utf8Value& value) {
+NAN_INLINE const char* ToConstString(const String::Utf8Value& value) {
   return *value ? *value : "<string conversion failed>";
 }
 
-static void dirbuf_add( fuse_req_t req, struct dirbuf *b, const char *name, fuse_ino_t ino ){
+NAN_INLINE static void dirbuf_add( fuse_req_t req, struct dirbuf *b, const char *name, fuse_ino_t ino ){
   struct stat stbuf;
   size_t oldsize = b->size;
   b->size += fuse_add_direntry(req, NULL, 0, name, NULL, 0);
@@ -118,7 +119,7 @@ static void dirbuf_add( fuse_req_t req, struct dirbuf *b, const char *name, fuse
   fuse_add_direntry(req, b->p + oldsize, b->size - oldsize, name, &stbuf, b->size);
 }
 
-static int reply_buf_limited(fuse_req_t req, const char *buf, size_t bufsize, off_t off, size_t maxsize){
+NAN_INLINE static int reply_buf_limited(fuse_req_t req, const char *buf, size_t bufsize, off_t off, size_t maxsize){
 
   //fprintf(stderr, "%s => bufsize %d - offset %d - maxsize %d\n", "reply_buf_limited", (int) bufsize, (int) off, (int) maxsize);
 
@@ -223,7 +224,7 @@ NAN_METHOD(OpCallback){
       entry.entry_timeout = 10.0;
       bindings_set_stat( &entry.attr, data);
       fuse_reply_entry(operation->req, &entry);
-      free( (char*) operation->name );
+      delete operation->name;
 
     }else{
       fuse_reply_err(operation->req, ENOENT);
@@ -281,7 +282,7 @@ NAN_METHOD(OpCallback){
     if(result >= 0 ){
       fprintf(stderr, "op(%d) req(%p) buffer(%p) size(%d)\n", operation->index, operation->req, &operation->data, operation->size);
       fuse_reply_buf( operation->req, operation->data, operation->size );
-      free(operation->data);
+      delete operation->data;
       //reply_buf_limited(operation->req, operation->data, result, operation->offset, operation->size);
     }else{
       //fprintf(stderr, "%s => %d\n", "Respondiendo con error", ENOENT);
@@ -307,29 +308,27 @@ void uv_handler(uv_async_t *handle){
   fprintf(stderr, "uv_handler %p\n", operation->req);
   //fprintf(stderr, "UNLOCK SEM\n");
   sem_post(sem_ip);
-  Local<Value> tmp[] = { Nan::New<Number>(operation->index), Nan::New<FunctionTemplate>(OpCallback)->GetFunction() };
-  Nan::Callback *callbackGenerator = new Nan::Callback(callback_constructor->Call(2, tmp).As<Function>());
-  Local<Function> callback = callbackGenerator->GetFunction();
+  Local<Function> callback = commonCallback->GetFunction();
 
   if( operation->type == OP_GETATTR ){
 
-    Local<Value> tmp[] = {LOCAL_NUMBER(operation->ino), LOCAL_NUMBER(operation->fd), callback};
-    bindings.getattr->Call( 3, tmp );
+    Local<Value> tmp[] = {LOCAL_NUMBER(operation->index), LOCAL_NUMBER(operation->ino), LOCAL_NUMBER(operation->fd), callback};
+    bindings.getattr->Call( 4, tmp );
 
   }else if( operation->type == OP_READDIR ){
 
-    Local<Value> tmp[] = {LOCAL_NUMBER(operation->ino), callback};
-    bindings.readdir->Call( 2, tmp );
+    Local<Value> tmp[] = {LOCAL_NUMBER(operation->index), LOCAL_NUMBER(operation->ino), callback};
+    bindings.readdir->Call( 3, tmp );
 
   }else if( operation->type == OP_LOOKUP ){
 
-    Local<Value> tmp[] = {LOCAL_NUMBER(operation->ino), LOCAL_STRING(operation->name), callback};
-    bindings.lookup->Call( 3, tmp );
+    Local<Value> tmp[] = {LOCAL_NUMBER(operation->index), LOCAL_NUMBER(operation->ino), LOCAL_STRING(operation->name), callback};
+    bindings.lookup->Call( 4, tmp );
 
   }else if( operation->type == OP_OPEN ){
 
-    Local<Value> tmp[] = {LOCAL_NUMBER(operation->ino), callback};
-    bindings.open->Call( 2, tmp );
+    Local<Value> tmp[] = {LOCAL_NUMBER(operation->index), LOCAL_NUMBER(operation->ino), callback};
+    bindings.open->Call( 3, tmp );
 
   }else if( operation->type == OP_READ ){
 
@@ -337,7 +336,7 @@ void uv_handler(uv_async_t *handle){
     fprintf(stderr, "Alojando en buffer %p\n", operation->data);
 
     Local<Value> tmp[] = {
-      LOCAL_NUMBER(operation->index), //ToDo -> Remove
+      LOCAL_NUMBER(operation->index),
       LOCAL_NUMBER(operation->ino),
       LOCAL_NUMBER(operation->fd),
       bindings_buffer( operation->data, operation->size),
@@ -349,8 +348,8 @@ void uv_handler(uv_async_t *handle){
 
   }else if( operation->type == OP_RELEASE ){
 
-    Local<Value> tmp[] = {LOCAL_NUMBER(operation->ino), LOCAL_NUMBER(operation->fd), callback};
-    bindings.release->Call( 3, tmp );
+    Local<Value> tmp[] = {LOCAL_NUMBER(operation->index), LOCAL_NUMBER(operation->ino), LOCAL_NUMBER(operation->fd), callback};
+    bindings.release->Call( 4, tmp );
 
   }else{
     fprintf(stderr, "uv_handler => %s %d\n", "not implemented",operation->type);
@@ -604,6 +603,9 @@ NAN_METHOD(Mount) {
     return Nan::ThrowError("mnt must be a string");
   }
 
+  Local<Value> tmp[] = {Nan::New<FunctionTemplate>(OpCallback)->GetFunction()};
+  commonCallback = new Nan::Callback(callback_constructor->Call(1, tmp).As<Function>());
+
   //ToDo -> Path
   Nan::Utf8String path(info[0]);
   Local<Object> operations = info[1].As<Object>();
@@ -618,7 +620,7 @@ NAN_METHOD(Mount) {
   bindings.release = LOOKUP_CALLBACK(operations, "release");
 
   loop = uv_default_loop();
-  uv_async_init(loop, &loop_async, uv_handler);
+  uv_async_init(loop, &loop_async, (uv_async_cb) uv_handler);
 
   pthread_t thread_id;
   pthread_attr_t thread_attr;
