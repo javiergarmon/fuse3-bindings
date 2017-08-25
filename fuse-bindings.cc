@@ -78,12 +78,12 @@ struct bindings_template {
 };
 
 struct operation_template {
-  uint32_t index;
+  unsigned long index;
   int type;
   fuse_req_t req;
   fuse_ino_t ino;
   fuse_file_info fi;
-  uint32_t fd;
+  unsigned long fd;
   size_t size;
   off_t offset;
   const char *name;
@@ -95,8 +95,8 @@ static uv_async_t loop_async;
 static struct bindings_template bindings;
 static Nan::Callback *callback_constructor;
 static Nan::Callback *commonCallback;
-static std::unordered_map<std::uint32_t, operation_template *> operations_map = {};
-static uint32_t operation_count = 0;
+static std::unordered_map<unsigned long, operation_template *> operations_map = {};
+static unsigned long operation_count = 0;
 static pthread_mutex_t mutex;
 static sem_t *sem_ip;
 
@@ -121,7 +121,7 @@ NAN_INLINE static void dirbuf_add( fuse_req_t req, struct dirbuf *b, const char 
 
 NAN_INLINE static int reply_buf_limited(fuse_req_t req, const char *buf, size_t bufsize, off_t off, size_t maxsize){
 
-  //fprintf(stderr, "%s => bufsize %d - offset %d - maxsize %d\n", "reply_buf_limited", (int) bufsize, (int) off, (int) maxsize);
+  //fprintf(stderr, "%s => bufsize %ld - offset %ld - maxsize %ld\n", "reply_buf_limited", (int) bufsize, (int) off, (int) maxsize);
 
   if (off < bufsize){
     return fuse_reply_buf(req, buf + off, min(bufsize - off, maxsize));
@@ -142,13 +142,13 @@ NAN_INLINE static void bindings_set_date (struct timespec *out, Local<Date> date
 
 NAN_INLINE static void bindings_set_stat (struct stat *stat, Local<Object> obj) {
   if (obj->Has(LOCAL_STRING("dev"))) stat->st_dev = obj->Get(LOCAL_STRING("dev"))->NumberValue();
-  if (obj->Has(LOCAL_STRING("ino"))) stat->st_ino = obj->Get(LOCAL_STRING("ino"))->Uint32Value();
+  if (obj->Has(LOCAL_STRING("ino"))) stat->st_ino = obj->Get(LOCAL_STRING("ino"))->NumberValue();
   if (obj->Has(LOCAL_STRING("mode"))) stat->st_mode = obj->Get(LOCAL_STRING("mode"))->Uint32Value();
   if (obj->Has(LOCAL_STRING("nlink"))) stat->st_nlink = obj->Get(LOCAL_STRING("nlink"))->Uint32Value();
   if (obj->Has(LOCAL_STRING("uid"))) stat->st_uid = obj->Get(LOCAL_STRING("uid"))->NumberValue();
   if (obj->Has(LOCAL_STRING("gid"))) stat->st_gid = obj->Get(LOCAL_STRING("gid"))->NumberValue();
   if (obj->Has(LOCAL_STRING("rdev"))) stat->st_rdev = obj->Get(LOCAL_STRING("rdev"))->NumberValue();
-  if (obj->Has(LOCAL_STRING("size"))) stat->st_size = obj->Get(LOCAL_STRING("size"))->Uint32Value();
+  if (obj->Has(LOCAL_STRING("size"))) stat->st_size = obj->Get(LOCAL_STRING("size"))->NumberValue();
   if (obj->Has(LOCAL_STRING("blocks"))) stat->st_blocks = obj->Get(LOCAL_STRING("blocks"))->NumberValue();
   if (obj->Has(LOCAL_STRING("blksize"))) stat->st_blksize = obj->Get(LOCAL_STRING("blksize"))->NumberValue();
 #ifdef __APPLE__
@@ -174,7 +174,7 @@ NAN_INLINE v8::Local<v8::Object> bindings_buffer (char *data, size_t length) {
 #else
 void noop (char *data, void *hint) {}
 NAN_INLINE v8::Local<v8::Object> bindings_buffer (char *data, size_t length) {
-  //fprintf(stderr, "%s => %d\n", "buffer nuevo", (int) length);
+  //fprintf(stderr, "%s => %ld\n", "buffer nuevo", (int) length);
   return Nan::NewBuffer(data, length, noop, NULL).ToLocalChecked();
 }
 #endif
@@ -182,18 +182,18 @@ NAN_INLINE v8::Local<v8::Object> bindings_buffer (char *data, size_t length) {
 NAN_METHOD(OpCallback){
 
   pthread_mutex_lock(&mutex);
-  fprintf(stderr, "Extraigo %d\n", info[ 0 ]->Uint32Value());
-  operation_template *operation = operations_map[ info[ 0 ]->Uint32Value() ];
+  fprintf(stderr, "Extraigo %ld\n", info[ 0 ]->NumberValue());
+  operation_template *operation = operations_map[ info[ 0 ]->NumberValue() ];
   operations_map.erase( operation->index );
   pthread_mutex_unlock(&mutex);
 
-  fprintf(stderr, "REPLY(%d) => dir req( %p )\n", operation->index, operation->req);
+  fprintf(stderr, "REPLY(%ld) => dir req( %p )\n", operation->index, operation->req);
 
   int result = (info.Length() > 1 && info[1]->IsNumber()) ? info[1]->Int32Value() : 0;
 
   if( operation->type == OP_GETATTR ){
 
-    //fprintf(stderr, "%s => %d\n", "OP_GETATTR", result );
+    //fprintf(stderr, "%s => %ld\n", "OP_GETATTR", result );
 
     if(result == 0 && info.Length() > 2 && info[2]->IsObject()){
 
@@ -203,20 +203,20 @@ NAN_METHOD(OpCallback){
       fuse_reply_attr(operation->req, &stbuf, 10.0);
 
     }else{
-      //fprintf(stderr, "%s %d\n", "get attr falla",ENOENT);
+      //fprintf(stderr, "%s %ld\n", "get attr falla",ENOENT);
       fuse_reply_err(operation->req, ENOENT);
     }
 
   }else if( operation->type == OP_LOOKUP ){
 
-    //fprintf(stderr, "%s => %d\n", "OP_LOOKUP", result );
+    //fprintf(stderr, "%s => %ld\n", "OP_LOOKUP", result );
 
     if(result == 0 && info.Length() > 2 && info[2]->IsObject()){
 
       struct fuse_entry_param entry;
 
       Local<Object> data = info[2].As<Object>();
-      uint32_t ino = data->Get(LOCAL_STRING("ino"))->Uint32Value();
+      unsigned long ino = data->Get(LOCAL_STRING("ino"))->NumberValue();
 
       memset(&entry, 0, sizeof(entry));
       entry.ino = ino;
@@ -232,10 +232,10 @@ NAN_METHOD(OpCallback){
 
   }else if( operation->type == OP_OPEN ){
 
-    //fprintf(stderr, "%s => %d\n", "OP_OPEN", result );
+    //fprintf(stderr, "%s => %ld\n", "OP_OPEN", result );
 
     if(result == 0 && info.Length() > 2 && info[2]->IsNumber()){
-      operation->fi.fh = info[2]->Uint32Value();
+      operation->fi.fh = info[2]->NumberValue();
       fuse_reply_open(operation->req, &operation->fi);
     }else{
       fuse_reply_err(operation->req, ENOENT);
@@ -243,7 +243,7 @@ NAN_METHOD(OpCallback){
 
   }else if( operation->type == OP_READDIR ){
 
-    //fprintf(stderr, "%s => %d\n", "OP_READDIR", result );
+    //fprintf(stderr, "%s => %ld\n", "OP_READDIR", result );
 
     if(result == 0 && info.Length() > 2 && info[2]->IsArray()){
 
@@ -257,13 +257,13 @@ NAN_METHOD(OpCallback){
 
       Local<Object> entry;
       Local<String> entryName;
-      uint32_t entryIno;
+      unsigned long entryIno;
 
       for( uint32_t i = 0; i < entries->Length(); i++ ){
 
         entry = entries->Get( i )->ToObject();
         entryName = entry->Get(LOCAL_STRING("name"))->ToString();
-        entryIno = entry->Get(LOCAL_STRING("ino"))->Uint32Value();
+        entryIno = entry->Get(LOCAL_STRING("ino"))->NumberValue();
 
         dirbuf_add( operation->req, &buf, ToConstString( String::Utf8Value( entryName ) ), entryIno );
 
@@ -277,23 +277,23 @@ NAN_METHOD(OpCallback){
     }
 
   }else if( operation->type == OP_READ ){
-    //fprintf(stderr, "%s => %d\n", "OP_READ", result );
+    //fprintf(stderr, "%s => %ld\n", "OP_READ", result );
 
     if(result >= 0 ){
-      fprintf(stderr, "op(%d) req(%p) buffer(%p) size(%d)\n", operation->index, operation->req, &operation->data, operation->size);
+      fprintf(stderr, "op(%ld) req(%p) buffer(%p) size(%ld)\n", operation->index, operation->req, &operation->data, operation->size);
       fuse_reply_buf( operation->req, operation->data, operation->size );
       delete operation->data;
       //reply_buf_limited(operation->req, operation->data, result, operation->offset, operation->size);
     }else{
-      //fprintf(stderr, "%s => %d\n", "Respondiendo con error", ENOENT);
+      //fprintf(stderr, "%s => %ld\n", "Respondiendo con error", ENOENT);
       fuse_reply_err(operation->req, ENOENT);
     }
 
   }else if( operation->type == OP_RELEASE ){
-    //fprintf(stderr, "%s => %d\n", "OP_RELEASE", result );
+    //fprintf(stderr, "%s => %ld\n", "OP_RELEASE", result );
     fuse_reply_err(operation->req, result == 0 ? 0 : ENOENT);
   }else{
-    fprintf(stderr, "OpCallback => %s - %d - %d\n", "not implemented",operation->type,result);
+    fprintf(stderr, "OpCallback => %s - %ld - %ld\n", "not implemented",operation->type,result);
   }
 
   fprintf(stderr, "%s => %p\n", "OpCallback END", operation->req);
@@ -332,7 +332,7 @@ void uv_handler(uv_async_t *handle){
 
   }else if( operation->type == OP_READ ){
 
-    fprintf(stderr, "Pidiendo(%d) al fd(%d) size(%d) con offset(%d)\n", operation->index, operation->fd, operation->size, operation->offset);
+    fprintf(stderr, "Pidiendo(%ld) al fd(%ld) size(%ld) con offset(%ld)\n", operation->index, operation->fd, operation->size, operation->offset);
     fprintf(stderr, "Alojando en buffer %p\n", operation->data);
 
     Local<Value> tmp[] = {
@@ -352,7 +352,7 @@ void uv_handler(uv_async_t *handle){
     bindings.release->Call( 4, tmp );
 
   }else{
-    fprintf(stderr, "uv_handler => %s %d\n", "not implemented",operation->type);
+    fprintf(stderr, "uv_handler => %s %ld\n", "not implemented",operation->type);
   }
 
 }
@@ -378,7 +378,7 @@ void ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi){
   operations_map[ operation->index ] = operation;
   pthread_mutex_unlock(&mutex);
 
-  fprintf(stderr, "getattr(%d) => dir req( %p )\n", operation->index, req);
+  fprintf(stderr, "getattr(%ld) => dir req( %p )\n", operation->index, req);
 
   uv_async_send(&loop_async);
   //fprintf(stderr, "LOCK SEM\n");
@@ -506,7 +506,7 @@ void ll_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, struct fuse
   operations_map[ operation->index ] = operation;
   pthread_mutex_unlock(&mutex);
 
-  fprintf(stderr, "read(%d) => dir req( %p )\n", operation->index, req);
+  fprintf(stderr, "read(%ld) => dir req( %p )\n", operation->index, req);
 
   uv_async_send(&loop_async);
   //fprintf(stderr, "LOCK SEM\n");
@@ -546,7 +546,7 @@ static void *fuse_thread(void *path){
   /*
   int ret = -1;
 
-  if( */fprintf(stderr, "%d\n", fuse_parse_cmdline(&args, &opts) );/*!= 0)
+  if( */fprintf(stderr, "%ld\n", fuse_parse_cmdline(&args, &opts) );/*!= 0)
     return 1;
   if (opts.show_help) {
     printf("usage: %s [options] <mountpoint>\n\n", argv[0]);
