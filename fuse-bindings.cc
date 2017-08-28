@@ -182,12 +182,12 @@ NAN_INLINE v8::Local<v8::Object> bindings_buffer (char *data, size_t length) {
 NAN_METHOD(OpCallback){
 
   pthread_mutex_lock(&mutex);
-  fprintf(stderr, "Extraigo %ld\n", info[ 0 ]->NumberValue());
+  //fprintf(stderr, "Extraigo %ld\n", info[ 0 ]->NumberValue());
   operation_template *operation = operations_map[ info[ 0 ]->NumberValue() ];
   operations_map.erase( operation->index );
   pthread_mutex_unlock(&mutex);
 
-  fprintf(stderr, "REPLY(%ld) => dir req( %p )\n", operation->index, operation->req);
+  //fprintf(stderr, "REPLY(%ld) => dir req( %p )\n", operation->index, operation->req);
 
   int result = (info.Length() > 1 && info[1]->IsNumber()) ? info[1]->Int32Value() : 0;
 
@@ -280,7 +280,7 @@ NAN_METHOD(OpCallback){
     //fprintf(stderr, "%s => %ld\n", "OP_READ", result );
 
     if(result >= 0 ){
-      fprintf(stderr, "op(%ld) req(%p) buffer(%p) size(%ld)\n", operation->index, operation->req, &operation->data, operation->size);
+      //fprintf(stderr, "op(%ld) req(%p) buffer(%p) size(%ld)\n", operation->index, operation->req, &operation->data, operation->size);
       fuse_reply_buf( operation->req, operation->data, operation->size );
       delete operation->data;
       //reply_buf_limited(operation->req, operation->data, result, operation->offset, operation->size);
@@ -293,10 +293,10 @@ NAN_METHOD(OpCallback){
     //fprintf(stderr, "%s => %ld\n", "OP_RELEASE", result );
     fuse_reply_err(operation->req, result == 0 ? 0 : ENOENT);
   }else{
-    fprintf(stderr, "OpCallback => %s - %ld - %ld\n", "not implemented",operation->type,result);
+    //fprintf(stderr, "OpCallback => %s - %ld - %ld\n", "not implemented",operation->type,result);
   }
 
-  fprintf(stderr, "%s => %p\n", "OpCallback END", operation->req);
+  //fprintf(stderr, "%s => %p\n", "OpCallback END", operation->req);
   delete operation;
 
 }
@@ -305,7 +305,7 @@ void uv_handler(uv_async_t *handle){
   Nan::HandleScope scope;
 
   operation_template *operation = (operation_template *) handle->data;
-  fprintf(stderr, "uv_handler %p\n", operation->req);
+  //fprintf(stderr, "uv_handler %p\n", operation->req);
   //fprintf(stderr, "UNLOCK SEM\n");
   sem_post(sem_ip);
   Local<Function> callback = commonCallback->GetFunction();
@@ -332,8 +332,8 @@ void uv_handler(uv_async_t *handle){
 
   }else if( operation->type == OP_READ ){
 
-    fprintf(stderr, "Pidiendo(%ld) al fd(%ld) size(%ld) con offset(%ld)\n", operation->index, operation->fd, operation->size, operation->offset);
-    fprintf(stderr, "Alojando en buffer %p\n", operation->data);
+    //fprintf(stderr, "Pidiendo(%ld) al fd(%ld) size(%ld) con offset(%ld)\n", operation->index, operation->fd, operation->size, operation->offset);
+    //fprintf(stderr, "Alojando en buffer %p\n", operation->data);
 
     Local<Value> tmp[] = {
       LOCAL_NUMBER(operation->index),
@@ -352,7 +352,7 @@ void uv_handler(uv_async_t *handle){
     bindings.release->Call( 4, tmp );
 
   }else{
-    fprintf(stderr, "uv_handler => %s %ld\n", "not implemented",operation->type);
+    //fprintf(stderr, "uv_handler => %s %ld\n", "not implemented",operation->type);
   }
 
 }
@@ -378,7 +378,7 @@ void ll_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info *fi){
   operations_map[ operation->index ] = operation;
   pthread_mutex_unlock(&mutex);
 
-  fprintf(stderr, "getattr(%ld) => dir req( %p )\n", operation->index, req);
+  //fprintf(stderr, "getattr(%ld) => dir req( %p )\n", operation->index, req);
 
   uv_async_send(&loop_async);
   //fprintf(stderr, "LOCK SEM\n");
@@ -490,7 +490,7 @@ void ll_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, struct fuse
   //char buf[ size ]; // struct fuse_bufvec buf = FUSE_BUFVEC_INIT(size);
   char* buf = new char[size];
 
-  fprintf(stderr, "BUFFER %p\n", buf);
+  //fprintf(stderr, "BUFFER %p\n", buf);
 
   operation->type = OP_READ;
   operation->req = req;
@@ -506,7 +506,7 @@ void ll_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off, struct fuse
   operations_map[ operation->index ] = operation;
   pthread_mutex_unlock(&mutex);
 
-  fprintf(stderr, "read(%ld) => dir req( %p )\n", operation->index, req);
+  //fprintf(stderr, "read(%ld) => dir req( %p )\n", operation->index, req);
 
   uv_async_send(&loop_async);
   //fprintf(stderr, "LOCK SEM\n");
